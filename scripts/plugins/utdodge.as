@@ -5,7 +5,7 @@ void PluginInit()
 	g_Module.ScriptInfo.SetAuthor( "Nero" );
 	g_Module.ScriptInfo.SetContactInfo( "https://discord.gg/0wtJ6aAd7XOGI6vI" );
 
-	g_Hooks.RegisterHook( Hooks::Player::ClientDisconnect, @UnrealDodge::ClientDisconnect );
+	g_Hooks.RegisterHook( Hooks::Player::ClientPutInServer, @UnrealDodge::ClientPutInServer );
 	g_Hooks.RegisterHook( Hooks::Player::PlayerPreThink, @UnrealDodge::PlayerPreThink );
 
 	@UnrealDodge::cvar_iEnabled = CCVar( "dodge-enable", 1, "0/1 - Disable/enable the plugin. (default: 1)", ConCommandFlag::AdminOnly );
@@ -39,7 +39,7 @@ enum direction_e
 	DIR_RIGHT
 };
 
-HookReturnCode ClientDisconnect( CBasePlayer@ pPlayer )
+HookReturnCode ClientPutInServer( CBasePlayer@ pPlayer )
 {
 	int id = pPlayer.entindex();
 	flLastForwardPressed[id] = 0;
