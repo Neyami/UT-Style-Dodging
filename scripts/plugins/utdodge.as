@@ -41,12 +41,12 @@ enum direction_e
 
 HookReturnCode ClientPutInServer( CBasePlayer@ pPlayer )
 {
-	int id = pPlayer.entindex();
-	flLastForwardPressed[id] = 0;
-	flLastBackPressed[id] = 0;
-	flLastLeftPressed[id] = 0;
-	flLastRightPressed[id] = 0;
-	flLastDodge[id] = 0;
+	int id = g_EngineFuncs.IndexOfEdict(pPlayer.edict());
+	flLastForwardPressed[id] = 0.0;
+	flLastBackPressed[id] = 0.0;
+	flLastLeftPressed[id] = 0.0;
+	flLastRightPressed[id] = 0.0;
+	flLastDodge[id] = 0.0;
 	bIsUserDodging[id] = false;
 
 	return HOOK_CONTINUE;
