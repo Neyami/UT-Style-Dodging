@@ -1,4 +1,6 @@
-// Based on Sprint by akcaliberg
+// Double-tap timing based on Sprint by akcaliberg
+//WHY WON'T YOU WORK
+//#include "../ChatCommandManager" //By the svencoop team, should come with the game (svencoop\scripts\)
 
 void PluginInit()
 {
@@ -7,15 +9,39 @@ void PluginInit()
 
 	g_Hooks.RegisterHook( Hooks::Player::ClientPutInServer, @UnrealDodge::ClientPutInServer );
 	g_Hooks.RegisterHook( Hooks::Player::PlayerPreThink, @UnrealDodge::PlayerPreThink );
+	g_Hooks.RegisterHook( Hooks::Game::MapChange, @UnrealDodge::MapChange );
 
 	@UnrealDodge::cvar_iEnabled = CCVar( "dodge-enable", 1, "0/1 - Disable/enable the plugin. (default: 1)", ConCommandFlag::AdminOnly );
 	@UnrealDodge::cvar_flKeyPressInterval = CCVar( "dodge-keylisten-interval", 0.2, "The amount of time between keytaps to register as double-tap. (default: 0.2)", ConCommandFlag::AdminOnly );
 	@UnrealDodge::cvar_flCooldown = CCVar( "dodge-cooldown", 0.0, "The amount of time between dodges. (default: 5.0)", ConCommandFlag::AdminOnly ); //slightly bugged if over 0.0 :/
 	@UnrealDodge::cvar_flDodgeSpeed = CCVar( "dodge-speed", 400.0, "How far you dodge. (default: 400.0)", ConCommandFlag::AdminOnly );
+
+	/*
+	//WHY WON'T YOU WORK
+	@UnrealDodge::pChatCommands = ChatCommandSystem::ChatCommandManager();
+
+	UnrealDodge::pChatCommands.AddCommand( ChatCommandSystem::ChatCommand( "disabledodge", @UnrealDodge::DisablePlayerDodge, false ) );
+	UnrealDodge::pChatCommands.AddCommand( ChatCommandSystem::ChatCommand( "enabledodge", @UnrealDodge::EnablePlayerDodge, false ) );*/
+
+	UnrealDodge::arrsDisabledSteamIDs.resize(0);
+	UnrealDodge::ReadPlayerSettingsFile();
+}
+
+void MapInit()
+{
+	UnrealDodge::arrsDisabledSteamIDs.resize(0);
+	UnrealDodge::ReadPlayerSettingsFile();
 }
 
 namespace UnrealDodge
 {
+
+CClientCommand disabledodge( "disabledodge", "Disables UT dodge for the player.", @DisablePlayerDodgeCmd );
+CClientCommand enabledodge( "enabledodge", "Enables UT dodge for the player.", @EnablePlayerDodgeCmd );
+
+//WHY WON'T YOU WORK
+//ChatCommandSystem::ChatCommandManager@ pChatCommands = null;
+const string sPlayerSettingsFile = "scripts/plugins/store/utdodge/disabledids.txt";
 const float DODGE_UPSPEED = 200;
 
 array<float> flLastForwardPressed(33);
@@ -24,6 +50,8 @@ array<float> flLastLeftPressed(33);
 array<float> flLastRightPressed(33);
 array<float> flLastDodge(33);
 array<bool> bIsUserDodging(33);
+array<string> arrsDisabledSteamIDs;
+
 CCVar@ cvar_iEnabled, cvar_flKeyPressInterval, cvar_flCooldown, cvar_flDodgeSpeed;
 
 CClientCommand dodge_enable( "dodge_enable", "0/1 - Disable/enable the plugin. (default: 1)", @PluginSettings, ConCommandFlag::AdminOnly );
@@ -55,6 +83,8 @@ HookReturnCode ClientPutInServer( CBasePlayer@ pPlayer )
 HookReturnCode PlayerPreThink( CBasePlayer@ pPlayer, uint& out uiFlags )
 {
 	if( cvar_iEnabled.GetInt() <= 0 ) return HOOK_CONTINUE;
+
+	if( arrsDisabledSteamIDs.find(g_EngineFuncs.GetPlayerAuthId(pPlayer.edict())) >= 0 ) return HOOK_CONTINUE;
 
 	if( !pPlayer.IsAlive() ) return HOOK_CONTINUE;
 
@@ -270,6 +300,142 @@ void PluginSettings( const CCommand@ args )
 	}
 }
 
+void ReadPlayerSettingsFile()
+{
+	File@ file = g_FileSystem.OpenFile( sPlayerSettingsFile, OpenFile::READ );
+
+	if( file !is null and file.IsOpen() )
+	{
+		while( !file.EOFReached() )
+		{
+			string sLine;
+			file.ReadLine(sLine);
+			//fix for linux
+			string sFix = sLine.SubString( sLine.Length() - 1, 1 );
+			if( sFix == " " or sFix == "\n" or sFix == "\r" or sFix == "\t" )
+				sLine = sLine.SubString( 0, sLine.Length() - 1 );
+
+			//comment
+			if( sLine.SubString(0,1) == "#" or sLine.IsEmpty() )
+				continue;
+
+			//if( sLine.SubString(0,5) != "STEAM" ) continue;
+			if( !sLine.StartsWith("STEAM") ) continue;
+
+			arrsDisabledSteamIDs.insertLast( sLine );
+		}
+
+		file.Close();
+	}
+	else
+	{
+		g_Game.AlertMessage( at_logged, "[UTDODGE] Installation error: cannot locate settings file\n" );
+		g_Game.AlertMessage( at_logged, "[UTDODGE] Which should be in %1\n", sPlayerSettingsFile );
+		return;
+	}
+}
+
+void UpdatePlayerSettingsFile()
+{
+	if( arrsDisabledSteamIDs.length() == 0 ) return;
+
+	File@ file = g_FileSystem.OpenFile( sPlayerSettingsFile, OpenFile::WRITE );
+	if( file !is null and file.IsOpen() )
+	{
+		for( uint i = 0; i < arrsDisabledSteamIDs.length(); ++i )
+		{
+			file.Write( arrsDisabledSteamIDs[i] + "\n" );
+
+			g_Game.AlertMessage( at_notice, "Wrote to file: \"%1\"\n", arrsDisabledSteamIDs[i] );
+		}
+
+		file.Close();
+	}
+	else
+	{
+		g_Game.AlertMessage( at_logged, "[UTDODGE] Installation error: cannot locate settings file\n" );
+		g_Game.AlertMessage( at_logged, "[UTDODGE] Which should be in %1\n", sPlayerSettingsFile );
+		return;
+	}
+}
+
+void DisablePlayerDodgeCmd( const CCommand@ args )
+{
+	CBasePlayer@ pPlayer = g_ConCommandSystem.GetCurrentPlayer();
+	string sSteamID = g_EngineFuncs.GetPlayerAuthId(pPlayer.edict());
+
+	if( arrsDisabledSteamIDs.find(sSteamID) < 0 )
+	{
+		arrsDisabledSteamIDs.insertLast( sSteamID );
+
+		g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[UTDODGE] Dodging has been disabled for you.\n");
+	}
+	else
+		g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[UTDODGE] Dodging is already disabled for you.\n" );
+}
+
+void EnablePlayerDodgeCmd( const CCommand@ args )
+{
+	CBasePlayer@ pPlayer = g_ConCommandSystem.GetCurrentPlayer();
+	string sSteamID = g_EngineFuncs.GetPlayerAuthId(pPlayer.edict());
+
+	int searchIndex = arrsDisabledSteamIDs.find(sSteamID);
+	if( searchIndex >= 0 )
+	{
+		arrsDisabledSteamIDs.removeAt( searchIndex );
+
+		g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[UTDODGE] Dodging has been enabled for you.\n");
+	}
+	else
+		g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[UTDODGE] Dodging is already enabled for you.\n" );
+}
+
+//WHY WON'T YOU WORK
+/*void DisablePlayerDodge( SayParameters@ pParams )
+{
+	pParams.ShouldHide = true;
+
+	CBasePlayer@ pPlayer = pParams.GetPlayer();
+	string sSteamID = g_EngineFuncs.GetPlayerAuthId(pPlayer.edict());
+
+	if( arrsDisabledSteamIDs.find(sSteamID) < 0 )
+	{
+		arrsDisabledSteamIDs.insertLast( sSteamID );
+
+		g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[UTDODGE] Dodging has been disabled for you.\n");
+	}
+	else
+		g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[UTDODGE] Dodging is already disabled for you.\n" );
+}
+
+void EnablePlayerDodge( SayParameters@ pParams )
+{
+	pParams.ShouldHide = true;
+
+	CBasePlayer@ pPlayer = pParams.GetPlayer();
+	string sSteamID = g_EngineFuncs.GetPlayerAuthId(pPlayer.edict());
+
+	int searchIndex = arrsDisabledSteamIDs.find(sSteamID);
+	if( searchIndex >= 0 )
+	{
+		arrsDisabledSteamIDs.removeAt( searchIndex );
+
+		g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[UTDODGE] Dodging has been enabled for you.\n");
+	}
+	else
+		g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[UTDODGE] Dodging is already enabled for you.\n" );
+}*/
+
+HookReturnCode MapChange()
+{
+	//Fix for when plugins are reloaded
+	if( arrsDisabledSteamIDs.length() == 0 ) ReadPlayerSettingsFile();
+
+	UpdatePlayerSettingsFile();
+
+	return HOOK_CONTINUE;
+}
+
 }// end of namespace UnrealDodge
 /*
 *	Changelog
@@ -278,5 +444,11 @@ void PluginSettings( const CCommand@ args )
 *	Date: 		26 December 2023
 *	-------------------------
 *	- First release
+*	-------------------------
+*
+*	Version: 	1.1
+*	Date: 		30 April 2024
+*	-------------------------
+*	- Added commands to disable/enable for individual players
 *	-------------------------
 */
